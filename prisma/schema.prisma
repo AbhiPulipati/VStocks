@@ -14,17 +14,44 @@ datasource db {
 }
 
 model Company {
-  ticker       String  @id
-  name         String
-  description  String?
-  sector       String?
-  industry     String?
-  exchange     String?
-  website      String?
-  logoUrl      String?
-  ceo          String?
-  ipoDate      String?
+  ticker      String  @id
+  name        String
+  description String?
+  sector      String?
+  industry    String?
+  exchange    String?
+  website     String?
+  logoUrl     String?
+  ceo         String?
+  ipoDate     String?
+
+  financials CompanyFinancial[]
 }
 
+enum StatementType {
+  income
+  balance_sheet
+  cash_flow
+}
 
+enum PeriodType {
+  annual
+  quarterly
+}
 
+model CompanyFinancial {
+  ticker        String
+  statementType StatementType
+  fiscalYear    Int
+  periodType    PeriodType
+  quarter       Int // 0 = annual, 1-4 = quarterly
+
+  fiscalDateEnding DateTime?
+  reportedCurrency String?
+  payload          Json
+
+  company Company @relation(fields: [ticker], references: [ticker], onDelete: Cascade)
+
+  @@id([ticker, statementType, fiscalYear, periodType, quarter])
+  @@index([ticker, statementType, periodType, fiscalYear])
+}
