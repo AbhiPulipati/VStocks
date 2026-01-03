@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import IncomeStatementGrid from "@/components/financials/incomeStatementGrid";
+import IncomeStatementSankey from "@/components/financials/IncomeStatementSankey";
+import type { UnitScale } from "@/lib/financials/incomeStatementRows";
 
 type StatementType = "income" | "balance_sheet" | "cash_flow";
 type PeriodType = "annual" | "quarterly";
+type ViewType = "grid" | "sankey";
 
 type MetaRow = {
   ticker: string;
@@ -18,19 +22,18 @@ type MetaRow = {
 export default function FinancialsTester({ ticker }: { ticker: string }) {
   const [bootstrapping, setBootstrapping] = useState(true);
   const [bootstrapMsg, setBootstrapMsg] = useState<string>("Bootstrapping financials...");
-
   const [meta, setMeta] = useState<MetaRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // UI selections (matches your desired top block)
   const [statementType, setStatementType] = useState<StatementType>("income");
-  const [periodType, setPeriodType] = useState<PeriodType>("annual");
-  const [year, setYear] = useState<number | null>(null);
-  const [quarter, setQuarter] = useState<number>(0);
+const [periodType, setPeriodType] = useState<PeriodType>("annual");
+const [year, setYear] = useState<number | null>(null);
+const [quarter, setQuarter] = useState<number>(4); // ✅ NEW
+const [view, setView] = useState<ViewType>("grid");
+const [units, setUnits] = useState<UnitScale>("millions");
 
-  const [payloadRow, setPayloadRow] = useState<any>(null);
-  const [payloadLoading, setPayloadLoading] = useState(false);
-
-  // 1) Bootstrap once on mount (when user opens Financials tab)
+  // 1) Bootstrap once on mount
   useEffect(() => {
     let cancelled = false;
 
@@ -49,9 +52,7 @@ export default function FinancialsTester({ ticker }: { ticker: string }) {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error ?? "Bootstrap failed");
 
-        if (!cancelled) {
-          setBootstrapMsg("Bootstrapped ✓ Loading metadata...");
-        }
+        if (!cancelled) setBootstrapMsg("Bootstrapped ✓ Loading metadata...");
 
         const metaRes = await fetch(`/api/financials/meta?ticker=${encodeURIComponent(ticker)}`);
         const metaData = await metaRes.json().catch(() => ({}));
@@ -77,91 +78,57 @@ export default function FinancialsTester({ ticker }: { ticker: string }) {
     };
   }, [ticker]);
 
-  // Filter meta rows for current selection
+  // Meta filtered for statement + period
   const rowsForSelection = useMemo(() => {
     return meta.filter((r) => r.statementType === statementType && r.periodType === periodType);
   }, [meta, statementType, periodType]);
 
+  // Available years (for quarterly year selector)
   const years = useMemo(() => {
     const set = new Set<number>();
     rowsForSelection.forEach((r) => set.add(r.fiscalYear));
     return Array.from(set).sort((a, b) => b - a);
   }, [rowsForSelection]);
 
-  const quartersForYear = useMemo(() => {
-    if (periodType !== "quarterly" || year == null) return [];
-    return rowsForSelection
-      .filter((r) => r.fiscalYear === year)
-      .map((r) => r.quarter)
-      .filter((q) => q >= 1 && q <= 4)
-      .sort((a, b) => a - b);
-  }, [rowsForSelection, periodType, year]);
+  // Quarters available for the selected year (quarterly only)
+const quartersForYear = useMemo(() => {
+  if (periodType !== "quarterly" || year == null) return [];
+  const set = new Set<number>();
+  rowsForSelection
+    .filter((r) => r.fiscalYear === year && r.quarter > 0)
+    .forEach((r) => set.add(r.quarter));
+  return Array.from(set).sort((a, b) => b - a); // newest first
+}, [rowsForSelection, periodType, year]);
 
-  // Default year once meta loads / selection changes
+  // Default year when switching to quarterly or when meta loads
   useEffect(() => {
+    if (periodType !== "quarterly") return;
     if (!years.length) return;
     setYear((prev) => (prev == null || !years.includes(prev) ? years[0] : prev));
-  }, [years]);
+  }, [periodType, years]);
 
-  // Default quarter when switching to quarterly / year changes
-  useEffect(() => {
-    if (periodType !== "quarterly") {
-      setQuarter(0);
-      return;
-    }
-    if (quartersForYear.length) setQuarter(quartersForYear[0]);
-  }, [periodType, quartersForYear]);
+  // Default quarter when switching years in quarterly mode
+useEffect(() => {
+  if (periodType !== "quarterly") return;
+  if (!quartersForYear.length) return;
+  setQuarter((prev) => (quartersForYear.includes(prev) ? prev : quartersForYear[0]));
+}, [periodType, quartersForYear]);
 
-  // Fetch payload when selection changes
-  useEffect(() => {
-    let cancelled = false;
+  // If user switches back to annual, year isn’t used (but we can keep it stored)
+const yearDisabled =
+  view === "grid" ? periodType === "annual" : false; // ✅ sankey: year always enabled
 
-    async function run() {
-      if (bootstrapping) return;
-      if (year == null) return;
-      if (periodType === "quarterly" && !(quarter >= 1 && quarter <= 4)) return;
-      if (periodType === "annual") {
-        // annual stored as quarter=0
-        if (quarter !== 0) setQuarter(0);
-      }
-
-      try {
-        setPayloadLoading(true);
-        setError(null);
-
-        const q = periodType === "annual" ? 0 : quarter;
-
-        const url =
-          `/api/financials/payload?ticker=${encodeURIComponent(ticker)}` +
-          `&statementType=${encodeURIComponent(statementType)}` +
-          `&periodType=${encodeURIComponent(periodType)}` +
-          `&fiscalYear=${encodeURIComponent(String(year))}` +
-          `&quarter=${encodeURIComponent(String(q))}`;
-
-        const res = await fetch(url);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error ?? "Payload fetch failed");
-
-        if (!cancelled) setPayloadRow(data.row);
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? "Something went wrong");
-      } finally {
-        if (!cancelled) setPayloadLoading(false);
-      }
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [bootstrapping, ticker, statementType, periodType, year, quarter]);
+const yearOptions =
+  view === "grid" && periodType === "annual"
+    ? [{ value: "—", label: "—" }]
+    : years.map((y) => ({ value: String(y), label: String(y) }));
 
   return (
     <div className="space-y-4">
+      {/* Top block (selectors) */}
       <div className="rounded-xl border bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm text-muted-foreground">Financials Tester</div>
             <div className="text-xl font-semibold">{ticker}</div>
           </div>
 
@@ -176,82 +143,141 @@ export default function FinancialsTester({ ticker }: { ticker: string }) {
           </div>
         )}
 
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Statement</div>
-            <select
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-              value={statementType}
-              onChange={(e) => setStatementType(e.target.value as StatementType)}
-            >
-              <option value="income">Income Statement</option>
-              <option value="balance_sheet">Balance Sheet</option>
-              <option value="cash_flow">Cash Flow</option>
-            </select>
-          </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
+          <SelectBlock
+            label="Statement"
+            value={statementType}
+            onChange={(v) => setStatementType(v as StatementType)}
+            options={[
+              { value: "income", label: "Income Statement" },
+              { value: "balance_sheet", label: "Balance Sheet" },
+              { value: "cash_flow", label: "Cash Flow" },
+            ]}
+          />
 
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Period</div>
-            <select
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-              value={periodType}
-              onChange={(e) => setPeriodType(e.target.value as PeriodType)}
-            >
-              <option value="annual">Annual</option>
-              <option value="quarterly">Quarterly</option>
-            </select>
-          </div>
+          <SelectBlock
+            label="Period"
+            value={periodType}
+            onChange={(v) => setPeriodType(v as PeriodType)}
+            options={[
+              { value: "annual", label: "Annual" },
+              { value: "quarterly", label: "Quarterly" },
+            ]}
+          />
 
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Year</div>
-            <select
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-              value={year ?? ""}
-              onChange={(e) => setYear(Number(e.target.value))}
-              disabled={!years.length}
-            >
-              {years.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
+          {view === "sankey" && periodType === "quarterly" ? (
+  // ✅ Sankey + Quarterly: show Year + Quarter side-by-side (half + half)
+  <div className="space-y-1">
+    <div className="text-xs text-muted-foreground">Year / Quarter</div>
+    <div className="flex gap-2">
+      <select
+        className="w-1/2 rounded-lg border px-3 py-2 text-sm bg-white"
+        value={year ?? ""}
+        onChange={(e) => setYear(Number(e.target.value))}
+        disabled={!years.length}
+      >
+        {years.map((y) => (
+          <option key={y} value={y}>
+            {y}
+          </option>
+        ))}
+      </select>
 
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Quarter</div>
-            <select
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-              value={periodType === "annual" ? 0 : quarter}
-              onChange={(e) => setQuarter(Number(e.target.value))}
-              disabled={periodType !== "quarterly"}
-            >
-              {periodType === "annual" ? (
-                <option value={0}>—</option>
-              ) : (
-                quartersForYear.map((q) => (
-                  <option key={q} value={q}>
-                    Q{q}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
+      <select
+        className="w-1/2 rounded-lg border px-3 py-2 text-sm bg-white"
+        value={quarter}
+        onChange={(e) => setQuarter(Number(e.target.value))}
+        disabled={!quartersForYear.length}
+      >
+        {quartersForYear.map((q) => (
+          <option key={q} value={q}>
+            Q{q}
+          </option>
+        ))}
+      </select>
+    </div>
+  </div>
+    ) : (
+    // ✅ Otherwise: keep your existing Year selector behavior (dashes for annual grid)
+    <SelectBlock
+        label="Year"
+        value={view === "grid" && periodType === "annual" ? "—" : year ?? ""}
+        onChange={(v) => {
+        if (v === "—") return;
+        setYear(Number(v));
+        }}
+        disabled={yearDisabled || !years.length}
+        options={yearOptions}
+    />
+    )}
+
+          <SelectBlock
+            label="Units"
+            value={units}
+            onChange={(v) => setUnits(v as UnitScale)}
+            options={[
+              { value: "thousands", label: "Thousands" },
+              { value: "millions", label: "Millions" },
+              { value: "billions", label: "Billions" },
+            ]}
+          />
+
+          <SelectBlock
+            label="View"
+            value={view}
+            onChange={(v) => setView(v as ViewType)}
+            options={[
+              { value: "grid", label: "Grid" },
+              { value: "sankey", label: "Sankey (soon)" },
+            ]}
+          />
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium">Stored Payload</div>
-          <div className="text-xs text-muted-foreground">
-            {payloadLoading ? "Loading..." : payloadRow?.fiscalDateEnding ?? ""}
-          </div>
-        </div>
+      {/* Grid block */}
+      {view === "sankey" ? (
+  <IncomeStatementSankey
+    ticker={ticker}
+    statementType={statementType}
+    periodType={periodType}
+    fiscalYear={year}
+    units={units}
+  />
+) : (
+  <IncomeStatementGrid
+    ticker={ticker}
+    statementType={statementType}
+    periodType={periodType}
+    fiscalYear={periodType === "quarterly" ? year : null}
+    units={units}
+  />
+)}
+    </div>
+  );
+}
 
-        <pre className="mt-3 max-h-[520px] overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-50">
-          {payloadRow ? JSON.stringify(payloadRow.payload, null, 2) : "No payload loaded."}
-        </pre>
-      </div>
+function SelectBlock(props: {
+  label: string;
+  value: any;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xs text-muted-foreground">{props.label}</div>
+      <select
+        className="w-full rounded-lg border px-3 py-2 text-sm bg-white"
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        disabled={props.disabled}
+      >
+        {props.options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
