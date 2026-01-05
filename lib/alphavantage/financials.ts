@@ -84,3 +84,32 @@ export function cleanPayload(report: AvReport): Record<string, any> {
 
   return out;
 }
+
+export function pickIncomeStatementPayload(cleaned: Record<string, any>) {
+  const keep = [
+    "totalRevenue",
+    "costOfRevenue",
+    "costofGoodsAndServicesSold", // ✅ keep AV alt key (used as fallback)
+    "grossProfit",
+    "operatingExpenses",
+    "researchAndDevelopment",
+    "operatingIncome",
+    "netInterestIncome",
+    "interestIncome",
+    "interestExpense",
+    "incomeBeforeTax",
+    "incomeTaxExpense",
+    "netIncomeFromContinuingOperations",
+    "netIncome",
+    "ebit",
+    "ebitda",
+    "fiscalDateEnding",
+  ] as const;
+
+  const out: Record<string, any> = {};
+  for (const k of keep) {
+    const v = cleaned?.[k];
+    if (v != null) out[k] = v;
+  }
+  return out;
+}

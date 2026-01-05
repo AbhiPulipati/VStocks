@@ -89,13 +89,7 @@ export default function IncomeStatementGrid({
     return 1_000_000_000;
   }, [units]);
 
-  if (statementType !== "income") {
-    return (
-      <div className="rounded-xl border bg-white p-4 shadow-sm text-sm text-muted-foreground">
-        {statementType === "balance_sheet" ? "Balance Sheet grid coming next." : "Cash Flow grid coming next."}
-      </div>
-    );
-  }
+ if (statementType !== "income") return null;
 
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">

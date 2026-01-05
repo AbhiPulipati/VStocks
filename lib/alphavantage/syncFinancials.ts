@@ -4,6 +4,7 @@ import {
   fetchAvStatement,
   parseFiscalDateEnding,
   cleanPayload,
+  pickIncomeStatementPayload, 
   type AvStatementFn,
   type AvReport,
 } from "@/lib/alphavantage/financials";
@@ -119,7 +120,7 @@ export async function bootstrapFinancialsForTicker(tickerRaw: string) {
 
   await ensureCompanyExists(ticker);
 
-  const fns: AvStatementFn[] = ["INCOME_STATEMENT", "BALANCE_SHEET", "CASH_FLOW"];
+  const fns: AvStatementFn[] = ["INCOME_STATEMENT"];
   const results: any[] = [];
 
   for (const fn of fns) {
@@ -160,7 +161,10 @@ export async function bootstrapFinancialsForTicker(tickerRaw: string) {
             fiscalDateEnding: d,
             reportedCurrency:
               r.reportedCurrency && r.reportedCurrency !== "None" ? r.reportedCurrency : null,
-            payload: cleanPayload(r),
+            payload:
+        statementType === StatementType.income
+            ? pickIncomeStatementPayload(cleanPayload(r))
+            : cleanPayload(r),
           },
           create: {
             ticker,
@@ -171,7 +175,10 @@ export async function bootstrapFinancialsForTicker(tickerRaw: string) {
             fiscalDateEnding: d,
             reportedCurrency:
               r.reportedCurrency && r.reportedCurrency !== "None" ? r.reportedCurrency : null,
-            payload: cleanPayload(r),
+            payload:
+             statementType === StatementType.income
+                ? pickIncomeStatementPayload(cleanPayload(r))
+                : cleanPayload(r),  
           },
         })
       );

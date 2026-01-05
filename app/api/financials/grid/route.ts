@@ -45,23 +45,27 @@ export async function GET(req: NextRequest) {
     }
 
     // Quarterly: require fiscalYear, return up to 4 quarters for that year
-    const rows = await prisma.companyFinancial.findMany({
-      where: {
-        ...baseWhere,
-        fiscalYear: fiscalYear!,
-        quarter: { in: [1, 2, 3, 4] },
-      },
-      select: {
-        fiscalYear: true,
-        quarter: true,
-        fiscalDateEnding: true,
-        reportedCurrency: true,
-        payload: true,
-      },
-      // newest quarter first (Q4 -> Q1)
-      orderBy: [{ quarter: "desc" }],
-      take: 4,
-    });
+    // Quarterly: require fiscalYear, return quarters for that year
+const allowedQuarters =
+  statementType === "balance_sheet" ? [1, 2, 3] : [1, 2, 3, 4];
+
+const rows = await prisma.companyFinancial.findMany({
+  where: {
+    ...baseWhere,
+    fiscalYear: fiscalYear!,
+    quarter: { in: allowedQuarters },
+  },
+  select: {
+    fiscalYear: true,
+    quarter: true,
+    fiscalDateEnding: true,
+    reportedCurrency: true,
+    payload: true,
+  },
+  // newest quarter first (Q3 -> Q1 for finnhub; Q4 -> Q1 for others)
+  orderBy: [{ quarter: "desc" }],
+  take: allowedQuarters.length,
+});
 
     return NextResponse.json({ ok: true, rows });
   } catch (err: any) {

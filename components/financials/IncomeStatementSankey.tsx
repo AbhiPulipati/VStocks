@@ -129,6 +129,9 @@ export default function IncomeStatementSankey({
     const otherNet = havePretax && v.otherNet != null ? v.otherNet : 0;
     const showOther = havePretax && Math.abs(otherNet) > 0;
 
+    const otherTone: Tone =
+  otherNet > 0 ? "good" : otherNet < 0 ? "bad" : "neutral";
+
     const tax = v.incomeTaxExpense;
     const hasTax = tax != null && tax !== 0;
 
@@ -160,7 +163,7 @@ export default function IncomeStatementSankey({
       "SG&A": { x: 0.78, y: 0.64, tone: "bad" },
 
       // Other net: sits low and feeds into pretax (positive) or receives from op income (negative)
-      "Other income/(expense), net": { x: 0.42, y: 0.92, tone: "neutral" },
+     "Other income/(expense), net": { x: 0.42, y: 0.92, tone: otherTone },
 
       // Right side
       "Net Income": { x: 0.94, y: 0.78, tone: "good" },
@@ -399,6 +402,26 @@ if (hasTax && tax! < 0) {
 }
 
     const fmt = (n: number) => formatScaled(n, scaleDivisor);
+// ---- Build outgoing totals per source for % calculations (exclude invisible EPS links) ----
+const outTotals: Record<string, number> = {};
+for (const l of links) {
+  const s = l.source as string;
+  const t = l.target as string;
+
+  const isInvisible =
+    l.value === EPS ||
+    l?.tooltip?.show === false ||
+    (typeof t === "string" && t.endsWith("__sink")) ||
+    (typeof s === "string" && s.includes("__push")) ||
+    (typeof t === "string" && t.includes("__push"));
+
+  if (isInvisible) continue;
+
+  outTotals[s] = (outTotals[s] ?? 0) + (l.value ?? 0);
+}
+
+const pct = (value: number, base: number) =>
+  base > 0 ? ` (${((value / base) * 100).toFixed(1)}%)` : "";
 
     return {
       tooltip: {
@@ -407,12 +430,16 @@ if (hasTax && tax! < 0) {
           // Hide tooltip for sinks
           if (typeof params?.name === "string" && params.name.endsWith("__sink")) return "";
           if (params.dataType === "node") return `${params.name}<br/>${fmt(params.value || 0)}`;
-          if (params.dataType === "edge") {
-            const s = params.data?.source;
-            const t = params.data?.target;
+         if (params.dataType === "edge") {
+            const s = params.data?.source as string;
+            const t = params.data?.target as string;
             if (typeof t === "string" && t.endsWith("__sink")) return "";
-            return `${s} → ${t}<br/>${fmt(params.data.value || 0)}`;
-          }
+
+            const value = params.data.value || 0;
+            const base = outTotals[s] ?? 0;
+
+            return `${s} → ${t}<br/>${fmt(value)}${pct(value, base)}`;
+            }
           return "";
         },
       },
@@ -427,7 +454,14 @@ if (hasTax && tax! < 0) {
           data: nodes,
           links,
           lineStyle: { curveness: 0.5 },
-          label: { show: true, color: "#0f172a", fontSize: 12 },
+          label: {
+            show: true,
+            color: "#0f172a",
+            fontSize: 12,
+            position: "left",   // ✅ move labels to left side of nodes
+            align: "right",     // ✅ text sits flush against node
+            distance: 6,
+            },
         },
       ],
     };

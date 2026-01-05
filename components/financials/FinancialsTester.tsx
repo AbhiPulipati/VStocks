@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import IncomeStatementGrid from "@/components/financials/incomeStatementGrid";
 import IncomeStatementSankey from "@/components/financials/IncomeStatementSankey";
 import type { UnitScale } from "@/lib/financials/incomeStatementRows";
+import BalanceSheetGrid from "@/components/financials/BalanceSheetGrid";
 
 type StatementType = "income" | "balance_sheet" | "cash_flow";
 type PeriodType = "annual" | "quarterly";
-type ViewType = "grid" | "sankey";
+type ViewType = "grid" | "sankey" | "pie";
 
 type MetaRow = {
   ticker: string;
@@ -32,6 +33,13 @@ const [year, setYear] = useState<number | null>(null);
 const [quarter, setQuarter] = useState<number>(4); // ✅ NEW
 const [view, setView] = useState<ViewType>("grid");
 const [units, setUnits] = useState<UnitScale>("millions");
+
+useEffect(() => {
+  // Sankey only valid for income
+  if (statementType !== "income" && view === "sankey") setView("grid");
+  // Pie will be for balance_sheet later; for now keep grid if income picked
+  if (statementType === "income" && view === "pie") setView("grid");
+}, [statementType, view]);
 
   // 1) Bootstrap once on mount
   useEffect(() => {
@@ -114,12 +122,11 @@ useEffect(() => {
   setQuarter((prev) => (quartersForYear.includes(prev) ? prev : quartersForYear[0]));
 }, [periodType, quartersForYear]);
 
-  // If user switches back to annual, year isn’t used (but we can keep it stored)
-const yearDisabled =
-  view === "grid" ? periodType === "annual" : false; // ✅ sankey: year always enabled
+// Year is only selectable when quarterly (for any statement)
+const yearDisabled = periodType === "annual";
 
 const yearOptions =
-  view === "grid" && periodType === "annual"
+  periodType === "annual"
     ? [{ value: "—", label: "—" }]
     : years.map((y) => ({ value: String(y), label: String(y) }));
 
@@ -201,7 +208,7 @@ const yearOptions =
     // ✅ Otherwise: keep your existing Year selector behavior (dashes for annual grid)
     <SelectBlock
         label="Year"
-        value={view === "grid" && periodType === "annual" ? "—" : year ?? ""}
+        value={periodType === "annual" ? "—" : year ?? ""}
         onChange={(v) => {
         if (v === "—") return;
         setYear(Number(v));
@@ -226,31 +233,59 @@ const yearOptions =
             label="View"
             value={view}
             onChange={(v) => setView(v as ViewType)}
-            options={[
-              { value: "grid", label: "Grid" },
-              { value: "sankey", label: "Sankey (soon)" },
-            ]}
-          />
+            options={
+                statementType === "income"
+                ? [
+                    { value: "grid", label: "Grid" },
+                    { value: "sankey", label: "Sankey" },
+                    ]
+                : [
+                    { value: "grid", label: "Grid" },
+                    { value: "pie", label: "Pie" }, // coming next
+                    ]
+            }
+            />
         </div>
       </div>
 
       {/* Grid block */}
-      {view === "sankey" ? (
-  <IncomeStatementSankey
-    ticker={ticker}
-    statementType={statementType}
-    periodType={periodType}
-    fiscalYear={year}
-    units={units}
-  />
+      {/* Main block */}
+{statementType === "balance_sheet" ? (
+  view === "pie" ? (
+    <div className="rounded-xl border bg-white p-4 shadow-sm text-sm text-muted-foreground">
+      Balance Sheet pie coming next.
+    </div>
+  ) : (
+    <BalanceSheetGrid
+      ticker={ticker}
+      periodType={periodType}
+      fiscalYear={periodType === "quarterly" ? year : null}
+      units={units}
+    />
+  )
+) : statementType === "income" ? (
+  view === "sankey" ? (
+    <IncomeStatementSankey
+      ticker={ticker}
+      statementType={statementType}
+      periodType={periodType}
+      fiscalYear={year}
+      quarter={periodType === "quarterly" ? quarter : undefined}
+      units={units}
+    />
+  ) : (
+    <IncomeStatementGrid
+      ticker={ticker}
+      statementType={statementType}
+      periodType={periodType}
+      fiscalYear={periodType === "quarterly" ? year : null}
+      units={units}
+    />
+  )
 ) : (
-  <IncomeStatementGrid
-    ticker={ticker}
-    statementType={statementType}
-    periodType={periodType}
-    fiscalYear={periodType === "quarterly" ? year : null}
-    units={units}
-  />
+  <div className="rounded-xl border bg-white p-4 shadow-sm text-sm text-muted-foreground">
+    Cash Flow coming next.
+  </div>
 )}
     </div>
   );

@@ -1,6 +1,7 @@
 // app/api/financials/bootstrap/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrapFinancialsForTicker } from "@/lib/alphavantage/syncFinancials";
+import { bootstrapBalanceSheetForTickerFinnhub } from "@/lib/finnhub/syncBalanceSheet";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,8 +12,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing ticker" }, { status: 400 });
     }
 
-    const result = await bootstrapFinancialsForTicker(ticker);
-    return NextResponse.json(result);
+    // 1) Income statement (AlphaVantage)
+const income = await bootstrapFinancialsForTicker(ticker);
+
+// 2) Balance sheet (Finnhub, as-reported)
+const balanceSheet = await bootstrapBalanceSheetForTickerFinnhub(ticker);
+
+return NextResponse.json({ ok: true, ticker, income, balanceSheet });
+
   } catch (err: any) {
     console.error("API /api/financials/bootstrap error:", err);
     return NextResponse.json(
