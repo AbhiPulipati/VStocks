@@ -1,7 +1,8 @@
 // lib/finnhub/financialsReported.ts
-// Fetch Finnhub "financials-reported" and keep the original reported order.
 
 export type FinnhubReportedItem = {
+  concept: string;
+  unit: string | null;
   label: string;
   value: number | null;
 };
@@ -14,16 +15,33 @@ export type FinnhubFinancialsReportedRow = {
   endDate?: string;
   filedDate?: string;
   report: {
-    bs?: Array<{ label?: string; value?: number | null }>;
+    bs?: Array<{
+      concept?: string;
+      unit?: string;
+      label?: string;
+      value?: number | null;
+    }>;
   };
 };
 
-export async function fetchFinnhubFinancialsReported(symbol: string) {
+type FetchOpts = {
+  symbol?: string;      // e.g. "NVDA"
+  cik?: string;         // e.g. "320193"
+  freq?: "annual" | "quarterly";
+};
+
+export async function fetchFinnhubFinancialsReported(opts: FetchOpts) {
   const key = process.env.FINNHUB_API_KEY;
   if (!key) throw new Error("Missing FINNHUB_API_KEY");
 
   const url = new URL("https://finnhub.io/api/v1/stock/financials-reported");
-  url.searchParams.set("symbol", symbol);
+
+  if (opts.cik) url.searchParams.set("cik", opts.cik);
+  else if (opts.symbol) url.searchParams.set("symbol", opts.symbol);
+  else throw new Error("fetchFinnhubFinancialsReported: symbol or cik required");
+
+  if (opts.freq) url.searchParams.set("freq", opts.freq);
+
   url.searchParams.set("token", key);
 
   const res = await fetch(url.toString(), { cache: "no-store" });
@@ -42,13 +60,41 @@ export function pickBalanceSheetItemsInOrder(
 ): FinnhubReportedItem[] {
   const bs = row?.report?.bs ?? [];
 
-  // Keep array order exactly as provided.
   return bs
     .map((it) => {
+      const concept = (it?.concept ?? "").toString().trim();
       const label = (it?.label ?? "").toString().trim();
+      const unit = it?.unit != null ? String(it.unit).trim() : null;
+
       const value =
-        typeof it?.value === "number" && Number.isFinite(it.value) ? it.value : null;
-      return label ? { label, value } : null;
+        typeof it?.value === "number" && Number.isFinite(it.value)
+          ? it.value
+          : null;
+
+      if (!concept || !label) return null;
+      return { concept, unit: unit || null, label, value };
     })
     .filter((x): x is FinnhubReportedItem => !!x);
+}
+
+export function pickCashFlowItemsInOrder(
+  row: FinnhubFinancialsReportedRow
+): FinnhubReportedItem[] {
+  const cf = (row as any)?.report?.cf ?? [];
+
+  return cf
+    .map((it: any) => {
+      const concept = (it?.concept ?? "").toString().trim();
+      const label = (it?.label ?? "").toString().trim();
+      const unit = it?.unit != null ? String(it.unit).trim() : null;
+
+      const value =
+        typeof it?.value === "number" && Number.isFinite(it.value)
+          ? it.value
+          : null;
+
+      if (!concept || !label) return null;
+      return { concept, unit: unit || null, label, value };
+    })
+    .filter((x: any) => !!x);
 }

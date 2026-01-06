@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrapFinancialsForTicker } from "@/lib/alphavantage/syncFinancials";
 import { bootstrapBalanceSheetForTickerFinnhub } from "@/lib/finnhub/syncBalanceSheet";
+import { bootstrapCashFlowForTickerFinnhub } from "@/lib/finnhub/syncCashFlow";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,6 +15,8 @@ export async function POST(req: NextRequest) {
 
     // 1) Income statement (AlphaVantage)
 const income = await bootstrapFinancialsForTicker(ticker);
+await bootstrapCashFlowForTickerFinnhub(ticker);
+
 
 // 2) Balance sheet (Finnhub, as-reported)
 const balanceSheet = await bootstrapBalanceSheetForTickerFinnhub(ticker);

@@ -87,16 +87,24 @@ useEffect(() => {
   }, [ticker]);
 
   // Meta filtered for statement + period
-  const rowsForSelection = useMemo(() => {
-    return meta.filter((r) => r.statementType === statementType && r.periodType === periodType);
-  }, [meta, statementType, periodType]);
+ const rowsForSelection = useMemo(() => {
+  return meta.filter(
+    (r) =>
+      r.statementType === statementType &&
+      r.periodType === periodType &&
+      (periodType !== "quarterly" || r.quarter > 0)
+  );
+}, [meta, statementType, periodType]);
 
   // Available years (for quarterly year selector)
   const years = useMemo(() => {
-    const set = new Set<number>();
-    rowsForSelection.forEach((r) => set.add(r.fiscalYear));
-    return Array.from(set).sort((a, b) => b - a);
-  }, [rowsForSelection]);
+  const set = new Set<number>();
+  rowsForSelection.forEach((r) => set.add(r.fiscalYear));
+
+  return Array.from(set)
+    .sort((a, b) => b - a)
+    .slice(0, 5); // 👈 enforce 5-year window here
+}, [rowsForSelection]);
 
   // Quarters available for the selected year (quarterly only)
 const quartersForYear = useMemo(() => {
@@ -207,7 +215,7 @@ const yearOptions =
     ) : (
     // ✅ Otherwise: keep your existing Year selector behavior (dashes for annual grid)
     <SelectBlock
-        label="Year"
+        label="Fiscal Year"
         value={periodType === "annual" ? "—" : year ?? ""}
         onChange={(v) => {
         if (v === "—") return;

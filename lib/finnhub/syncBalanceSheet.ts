@@ -13,7 +13,7 @@ function parseDateMaybe(s?: string): Date | null {
   return Number.isFinite(d.getTime()) ? d : null;
 }
 
-function takeMostRecentAnnual(rows: FinnhubFinancialsReportedRow[], limit = 10) {
+function takeMostRecentAnnual(rows: FinnhubFinancialsReportedRow[], limit = 5) {
   return rows
     .filter((r) => r.quarter === 0)
     .sort((a, b) => {
@@ -48,15 +48,59 @@ export async function bootstrapBalanceSheetForTickerFinnhub(tickerRaw: string) {
 
   await ensureCompanyExists(ticker);
 
-  const data = await fetchFinnhubFinancialsReported(ticker);
-  const rows = data.data ?? [];
+  // 1) Fetch annual first (default annual) to get cik + latest 5 years
+const annualResp = await fetchFinnhubFinancialsReported({
+  symbol: ticker,
+  freq: "annual",
+});
+const annualRowsAll = annualResp.data ?? [];
 
-  // Annual: keep up to 10 most recent
-  const annual = takeMostRecentAnnual(rows, 10);
-  const years = new Set(annual.map((r) => r.year));
+const annual = takeMostRecentAnnual(annualRowsAll, 5);
+const annualYears = new Set(annual.map((r) => r.year));
 
-  // Quarterly: include quarters 1..3 for those years
-  const quarterlies = takeQuarterliesForYears(rows, years);
+// 2) Fetch quarterlies separately (Finnhub requires freq=quarterly)
+const quarterlyResp = await fetchFinnhubFinancialsReported({
+  // Prefer cik (more reliable), fallback to symbol
+  cik: annualResp.cik,
+  symbol: annualResp.cik ? undefined : ticker,
+  freq: "quarterly",
+});
+const quarterlyRowsAll = quarterlyResp.data ?? [];
+
+// Pick the most recent 5 distinct quarterly fiscal years available (Q1–Q3)
+const quarterlyYearsArr = Array.from(
+  new Set(
+    quarterlyRowsAll
+      .filter((r) => r.quarter >= 1 && r.quarter <= 3)
+      .map((r) => r.year)
+  )
+)
+  .sort((a, b) => b - a)
+  .slice(0, 5);
+
+const quarterlyYears = new Set(quarterlyYearsArr);
+
+// ✅ Keep only last 5 ANNUAL years (quarter = 0)
+await prisma.companyFinancial.deleteMany({
+  where: {
+    ticker,
+    statementType: StatementType.balance_sheet,
+    quarter: 0,
+    fiscalYear: { notIn: Array.from(annualYears) },
+  },
+});
+
+// ✅ Keep only last 5 QUARTERLY years (quarter IN 1..3)
+await prisma.companyFinancial.deleteMany({
+  where: {
+    ticker,
+    statementType: StatementType.balance_sheet,
+    quarter: { in: [1, 2, 3] },
+    fiscalYear: { notIn: Array.from(quarterlyYears) },
+  },
+});
+
+const quarterlies = takeQuarterliesForYears(quarterlyRowsAll, quarterlyYears);
 
   const ops: any[] = [];
 
