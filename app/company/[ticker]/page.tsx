@@ -4,6 +4,8 @@ import CompanyDescription from "@/components/company/ExpandableCompanyDescriptio
 import SymbolOverviewWidget from "@/components/tradingview/PriceChartWidget";
 import { fetchQuote } from "@/lib/fmp/quote";
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon } from "@heroicons/react/24/solid";
+import CompanyNews from "@/components/company/CompanyNews";
+import CompanyEvents from "@/components/company/CompanyEvents";
 
 export default async function CompanyPage({
   params,
@@ -137,6 +139,12 @@ export default async function CompanyPage({
     height={300}
   />
 </div>
+
+<CompanyEvents ticker={company.ticker} />
+
+{/* Recent News */}
+<CompanyNews ticker={company.ticker} />
+
     </div>
   );
 }

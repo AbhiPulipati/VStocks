@@ -17,11 +17,12 @@ export async function POST(req: NextRequest) {
 const income = await bootstrapFinancialsForTicker(ticker);
 await bootstrapCashFlowForTickerFinnhub(ticker);
 
-
 // 2) Balance sheet (Finnhub, as-reported)
 const balanceSheet = await bootstrapBalanceSheetForTickerFinnhub(ticker);
 
-return NextResponse.json({ ok: true, ticker, income, balanceSheet });
+const cashFlow = await bootstrapCashFlowForTickerFinnhub(ticker);
+
+return NextResponse.json({ ok: true, ticker, income, balanceSheet, cashFlow });
 
   } catch (err: any) {
     console.error("API /api/financials/bootstrap error:", err);

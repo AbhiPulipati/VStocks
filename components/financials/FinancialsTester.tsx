@@ -5,6 +5,8 @@ import IncomeStatementGrid from "@/components/financials/incomeStatementGrid";
 import IncomeStatementSankey from "@/components/financials/IncomeStatementSankey";
 import type { UnitScale } from "@/lib/financials/incomeStatementRows";
 import BalanceSheetGrid from "@/components/financials/BalanceSheetGrid";
+import CashFlowGrid from "@/components/financials/CashFlowGrid";
+import FinancialsTrends from "@/components/financials/FinancialsTrends";
 
 type StatementType = "income" | "balance_sheet" | "cash_flow";
 type PeriodType = "annual" | "quarterly";
@@ -116,6 +118,17 @@ const quartersForYear = useMemo(() => {
   return Array.from(set).sort((a, b) => b - a); // newest first
 }, [rowsForSelection, periodType, year]);
 
+const latestYear = useMemo(() => (years.length ? years[0] : null), [years]);
+
+const latestQuarterForLatestYear = useMemo(() => {
+  if (!latestYear) return 4;
+  const qs = rowsForSelection
+    .filter((r) => r.fiscalYear === latestYear && r.quarter > 0)
+    .map((r) => r.quarter);
+  if (!qs.length) return 4;
+  return Math.max(...qs);
+}, [rowsForSelection, latestYear]);
+
   // Default year when switching to quarterly or when meta loads
   useEffect(() => {
     if (periodType !== "quarterly") return;
@@ -125,10 +138,17 @@ const quartersForYear = useMemo(() => {
 
   // Default quarter when switching years in quarterly mode
 useEffect(() => {
-  if (periodType !== "quarterly") return;
-  if (!quartersForYear.length) return;
-  setQuarter((prev) => (quartersForYear.includes(prev) ? prev : quartersForYear[0]));
-}, [periodType, quartersForYear]);
+  if (!years.length) return;
+  setYear((prev) => (prev == null || !years.includes(prev) ? years[0] : prev));
+}, [years]);
+
+useEffect(() => {
+  // Reset only when switching statement/view (NOT when period/year metadata updates)
+  setPeriodType("annual");
+  setYear((prev) => (prev == null ? latestYear : prev));
+  setQuarter((prev) => (prev == null ? latestQuarterForLatestYear : prev));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [statementType, view]);
 
 // Year is only selectable when quarterly (for any statement)
 const yearDisabled = periodType === "annual";
@@ -180,24 +200,32 @@ const yearOptions =
             ]}
           />
 
-          {view === "sankey" && periodType === "quarterly" ? (
+{view === "sankey" ? (
   // ✅ Sankey + Quarterly: show Year + Quarter side-by-side (half + half)
   <div className="space-y-1">
-    <div className="text-xs text-muted-foreground">Year / Quarter</div>
-    <div className="flex gap-2">
-      <select
-        className="w-1/2 rounded-lg border px-3 py-2 text-sm bg-white"
-        value={year ?? ""}
-        onChange={(e) => setYear(Number(e.target.value))}
-        disabled={!years.length}
-      >
-        {years.map((y) => (
-          <option key={y} value={y}>
-            {y}
-          </option>
-        ))}
-      </select>
+  <div className="text-xs text-muted-foreground">
+    {periodType === "quarterly" ? "Year / Quarter" : "Year"}
+  </div>
 
+  <div className="flex gap-2">
+    {/* Year (always for Sankey) */}
+    <select
+      className={`rounded-lg border px-3 py-2 text-sm bg-white ${
+        periodType === "quarterly" ? "w-1/2" : "w-full"
+      }`}
+      value={year ?? ""}
+      onChange={(e) => setYear(Number(e.target.value))}
+      disabled={!years.length}
+    >
+      {years.map((y) => (
+        <option key={y} value={y}>
+          {y}
+        </option>
+      ))}
+    </select>
+
+    {/* Quarter (only if quarterly) */}
+    {periodType === "quarterly" ? (
       <select
         className="w-1/2 rounded-lg border px-3 py-2 text-sm bg-white"
         value={quarter}
@@ -210,8 +238,9 @@ const yearOptions =
           </option>
         ))}
       </select>
-    </div>
+    ) : null}
   </div>
+</div>
     ) : (
     // ✅ Otherwise: keep your existing Year selector behavior (dashes for annual grid)
     <SelectBlock
@@ -291,8 +320,22 @@ const yearOptions =
     />
   )
 ) : (
-  <div className="rounded-xl border bg-white p-4 shadow-sm text-sm text-muted-foreground">
-    Cash Flow coming next.
+  <CashFlowGrid
+    ticker={ticker}
+    periodType={periodType}
+    fiscalYear={periodType === "quarterly" ? year : null}
+    units={units}
+  />
+)}
+{view === "grid" && (
+  <div className="mt-4">
+    <FinancialsTrends
+      ticker={ticker}
+      statementType={statementType}
+      periodType={periodType}
+      fiscalYear={periodType === "quarterly" ? year : null}
+      units={units}
+    />
   </div>
 )}
     </div>

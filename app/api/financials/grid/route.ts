@@ -79,6 +79,93 @@ async function fetchAlphaVantageBalanceSheetTotals(ticker: string) {
   return rows;
 }
 
+async function fetchAlphaVantageCashFlowTotalsAnnual(ticker: string) {
+  const key = process.env.ALPHAVANTAGE_API_KEY;
+  if (!key) return null;
+
+  const url = `https://www.alphavantage.co/query?function=CASH_FLOW&symbol=${encodeURIComponent(
+    ticker
+  )}&apikey=${key}`;
+
+  const res = await fetch(url, { cache: "no-store" });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) return null;
+
+  const reports: any[] = Array.isArray(data.annualReports) ? data.annualReports : [];
+  if (!reports.length) return null;
+
+  // newest 5 by fiscalDateEnding desc
+  const sorted = reports
+    .filter((r) => r?.fiscalDateEnding)
+    .sort((a, b) => String(b.fiscalDateEnding).localeCompare(String(a.fiscalDateEnding)))
+    .slice(0, 5);
+
+  const toNum = (x: any) => {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const sum3 = (a: number | null, b: number | null, c: number | null) => {
+    if (a == null && b == null && c == null) return null;
+    return (a ?? 0) + (b ?? 0) + (c ?? 0);
+  };
+
+  return sorted.map((r) => {
+    const fiscalDateEnding = String(r.fiscalDateEnding);
+    const fiscalYear = Number(fiscalDateEnding.slice(0, 4));
+    const reportedCurrency = r.reportedCurrency ? String(r.reportedCurrency) : "USD";
+
+    // AlphaVantage cash flow keys
+    const netIncome = toNum(r.netIncome);
+    const op = toNum(r.operatingCashflow);
+    const inv = toNum(r.cashflowFromInvestment);
+    const fin = toNum(r.cashflowFromFinancing);
+    const netChange = sum3(op, inv, fin);
+
+    return {
+      fiscalYear,
+      quarter: 0,
+      fiscalDateEnding,
+      reportedCurrency,
+      payload: {
+        source: "alphavantage_cash_flow_totals",
+        items: [
+          {
+            concept: "us-gaap_NetIncomeLoss",
+            unit: reportedCurrency,
+            label: "Net Income",
+            value: netIncome,
+          },
+          {
+            concept: "us-gaap_NetCashProvidedByUsedInOperatingActivities",
+            unit: reportedCurrency,
+            label: "Net cash provided by (used in) operating activities",
+            value: op,
+          },
+          {
+            concept: "us-gaap_NetCashProvidedByUsedInInvestingActivities",
+            unit: reportedCurrency,
+            label: "Net cash provided by (used in) investing activities",
+            value: inv,
+          },
+          {
+            concept: "us-gaap_NetCashProvidedByUsedInFinancingActivities",
+            unit: reportedCurrency,
+            label: "Net cash provided by (used in) financing activities",
+            value: fin,
+          },
+          {
+            concept: "us-gaap_CashAndCashEquivalentsPeriodIncreaseDecrease",
+            unit: reportedCurrency,
+            label: "Net change in cash",
+            value: netChange,
+          },
+        ],
+      },
+    };
+  });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -133,6 +220,21 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ✅ Finnhub not available / not stored — fallback to AlphaVantage totals (CASH FLOW ANNUAL ONLY)
+if (!rows.length && statementType === "cash_flow") {
+  const avRows = await fetchAlphaVantageCashFlowTotalsAnnual(ticker);
+
+  if (avRows?.length) {
+    return NextResponse.json({
+      ok: true,
+      rows: avRows,
+      dropdownAvailable: false,
+      notice:
+        "Finnhub has no as-reported cash flow for this company. AlphaVantage totals only — dropdown breakdown is unavailable.",
+    });
+  }
+}
+
   return NextResponse.json({
     ok: true,
     rows,
@@ -162,7 +264,15 @@ const rows = await prisma.companyFinancial.findMany({
   orderBy: [{ quarter: "desc" }],
   take: allowedQuarters.length,
 });
-
+if (!rows.length) {
+  return NextResponse.json({
+    ok: true,
+    rows: [],
+    dropdownAvailable: false,
+    notice:
+      "Quarterly balance sheet is unavailable for this company on Finnhub. Try Annual (totals) if available.",
+  });
+}
     return NextResponse.json({ ok: true, rows });
   } catch (err: any) {
     console.error("GET /api/financials/grid error:", err);

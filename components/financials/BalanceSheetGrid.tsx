@@ -422,8 +422,15 @@ const [dropdownAvailable, setDropdownAvailable] = useState(true);
           ordered.push(k);
         }
       }
-
-      return ordered;
+        const hasAnyNonZero = (rowKey: string) => {
+        for (const p of bucketed) {
+          const v = p.valueByRowKey[rowKey];
+          if (v == null) continue;
+          if (v !== 0) return true;
+        }
+        return false;
+      };
+      return ordered.filter(hasAnyNonZero);
     };
 
     const unions = {

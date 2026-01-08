@@ -1,72 +1,43 @@
+// lib/finnhub/syncCashFlow.ts
 import { prisma } from "@/lib/prisma";
+import { PeriodType, StatementType } from "@/lib/generated/prisma/client";
 import {
   fetchFinnhubFinancialsReported,
   pickCashFlowItemsInOrder,
   type FinnhubFinancialsReportedRow,
 } from "@/lib/finnhub/financialsReported";
 
-function parseDateMaybe(s?: string) {
+function parseDateMaybe(s?: string): Date | null {
   if (!s) return null;
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return Number.isFinite(d.getTime()) ? d : null;
 }
 
 function takeMostRecentAnnual(rows: FinnhubFinancialsReportedRow[], limit = 5) {
-  const annual = rows.filter((r) => r.quarter === 0);
-  annual.sort((a, b) => String(b.endDate ?? "").localeCompare(String(a.endDate ?? "")));
-  return annual.slice(0, limit);
+  return rows
+    .filter((r) => r.quarter === 0)
+    .sort((a, b) => {
+      const ad = parseDateMaybe(a.endDate) ?? parseDateMaybe(a.filedDate);
+      const bd = parseDateMaybe(b.endDate) ?? parseDateMaybe(b.filedDate);
+      return (bd?.getTime() ?? 0) - (ad?.getTime() ?? 0);
+    })
+    .slice(0, limit);
 }
 
 function takeQuarterliesForYears(rows: FinnhubFinancialsReportedRow[], years: Set<number>) {
-  const q = rows.filter((r) => r.quarter >= 1 && r.quarter <= 4 && years.has(r.year));
-  q.sort((a, b) => {
-    if (a.year !== b.year) return b.year - a.year;
-    return b.quarter - a.quarter;
-  });
-  return q;
+  return rows
+    .filter((r) => r.quarter >= 1 && r.quarter <= 4 && years.has(r.year))
+    .sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return b.quarter - a.quarter;
+    });
 }
 
-async function upsertCompanyFinancialByLookup(args: {
-  ticker: string;
-  statementType: "cash_flow";
-  periodType: "annual" | "quarterly";
-  fiscalYear: number;
-  quarter: number;
-  fiscalDateEnding: Date | null;
-  payload: any;
-}) {
-  const existing = await prisma.companyFinancial.findFirst({
-    where: {
-      ticker: args.ticker,
-      statementType: args.statementType,
-      periodType: args.periodType,
-      fiscalYear: args.fiscalYear,
-      quarter: args.quarter,
-    },
-  });
-
-  /*if (existing) {
-    return prisma.companyFinancial.update({
-      where: { id: existing.id },
-      data: {
-        fiscalDateEnding: args.fiscalDateEnding,
-        reportedCurrency: null,
-        payload: args.payload,
-      },
-    });
-  }*/
-
-  return prisma.companyFinancial.create({
-    data: {
-      ticker: args.ticker,
-      statementType: args.statementType,
-      periodType: args.periodType,
-      fiscalYear: args.fiscalYear,
-      quarter: args.quarter,
-      fiscalDateEnding: args.fiscalDateEnding,
-      reportedCurrency: null,
-      payload: args.payload,
-    },
+async function ensureCompanyExists(ticker: string) {
+  await prisma.company.upsert({
+    where: { ticker },
+    update: {},
+    create: { ticker, name: ticker },
   });
 }
 
@@ -74,7 +45,9 @@ export async function bootstrapCashFlowForTickerFinnhub(tickerRaw: string) {
   const ticker = tickerRaw.trim().toUpperCase();
   if (!ticker) throw new Error("Missing ticker");
 
-  // 1) Annual (last 5)
+  await ensureCompanyExists(ticker);
+
+  // 1) Annual: grab most recent 5
   const annualResp = await fetchFinnhubFinancialsReported({
     symbol: ticker,
     freq: "annual",
@@ -83,7 +56,7 @@ export async function bootstrapCashFlowForTickerFinnhub(tickerRaw: string) {
   const annual = takeMostRecentAnnual(annualRowsAll, 5);
   const annualYears = new Set(annual.map((r) => r.year));
 
-  // 2) Quarterly (last 5 distinct fiscal years available)
+  // 2) Quarterly: most recent 5 distinct fiscal years available (Q1–Q4)
   const quarterlyResp = await fetchFinnhubFinancialsReported({
     cik: annualResp.cik,
     symbol: annualResp.cik ? undefined : ticker,
@@ -104,61 +77,112 @@ export async function bootstrapCashFlowForTickerFinnhub(tickerRaw: string) {
   const quarterlyYears = new Set(quarterlyYearsArr);
   const quarterlies = takeQuarterliesForYears(quarterlyRowsAll, quarterlyYears);
 
-  // ✅ Keep only last 5 ANNUAL years (quarter=0)
+  // ✅ keep only last 5 annual years
   await prisma.companyFinancial.deleteMany({
     where: {
       ticker,
-      statementType: "cash_flow",
+      statementType: StatementType.cash_flow,
+      periodType: PeriodType.annual,
       quarter: 0,
       fiscalYear: { notIn: Array.from(annualYears) },
     },
   });
 
-  // ✅ Keep only last 5 QUARTERLY years (quarter 1..4)
+  // ✅ keep only last 5 quarterly years
   await prisma.companyFinancial.deleteMany({
     where: {
       ticker,
-      statementType: "cash_flow",
+      statementType: StatementType.cash_flow,
+      periodType: PeriodType.quarterly,
       quarter: { in: [1, 2, 3, 4] },
       fiscalYear: { notIn: Array.from(quarterlyYears) },
     },
   });
 
-  // Write annual
+  const ops: any[] = [];
+
+  // Write annual via UPSERT (prevents composite-id collisions)
   for (const r of annual) {
     const items = pickCashFlowItemsInOrder(r);
     const d = parseDateMaybe(r.endDate) ?? parseDateMaybe(r.filedDate);
 
-    await upsertCompanyFinancialByLookup({
-      ticker,
-      statementType: "cash_flow",
-      periodType: "annual",
-      fiscalYear: r.year,
-      quarter: 0,
-      fiscalDateEnding: d,
-      payload: { source: "finnhub_cf", items },
-    });
+    ops.push(
+      prisma.companyFinancial.upsert({
+        where: {
+          ticker_statementType_fiscalYear_periodType_quarter: {
+            ticker,
+            statementType: StatementType.cash_flow,
+            fiscalYear: r.year,
+            periodType: PeriodType.annual,
+            quarter: 0,
+          },
+        },
+        update: {
+          fiscalDateEnding: d,
+          reportedCurrency: "USD",
+          payload: { source: "finnhub_cf", items },
+        },
+        create: {
+          ticker,
+          statementType: StatementType.cash_flow,
+          fiscalYear: r.year,
+          periodType: PeriodType.annual,
+          quarter: 0,
+          fiscalDateEnding: d,
+          reportedCurrency: "USD",
+          payload: { source: "finnhub_cf", items },
+        },
+      })
+    );
   }
 
-  // Write quarterly
+  // Write quarterly via UPSERT
   for (const r of quarterlies) {
     const items = pickCashFlowItemsInOrder(r);
     const d = parseDateMaybe(r.endDate) ?? parseDateMaybe(r.filedDate);
 
-    await upsertCompanyFinancialByLookup({
-      ticker,
-      statementType: "cash_flow",
-      periodType: "quarterly",
-      fiscalYear: r.year,
-      quarter: r.quarter,
-      fiscalDateEnding: d,
-      payload: { source: "finnhub_cf", items },
-    });
+    ops.push(
+      prisma.companyFinancial.upsert({
+        where: {
+          ticker_statementType_fiscalYear_periodType_quarter: {
+            ticker,
+            statementType: StatementType.cash_flow,
+            fiscalYear: r.year,
+            periodType: PeriodType.quarterly,
+            quarter: r.quarter,
+          },
+        },
+        update: {
+          fiscalDateEnding: d,
+          reportedCurrency: "USD",
+          payload: { source: "finnhub_cf", items },
+        },
+        create: {
+          ticker,
+          statementType: StatementType.cash_flow,
+          fiscalYear: r.year,
+          periodType: PeriodType.quarterly,
+          quarter: r.quarter,
+          fiscalDateEnding: d,
+          reportedCurrency: "USD",
+          payload: { source: "finnhub_cf", items },
+        },
+      })
+    );
+  }
+
+  // Batch transactions (safer on serverless)
+  const batchSize = 25;
+  for (let i = 0; i < ops.length; i += batchSize) {
+    await prisma.$transaction(ops.slice(i, i + batchSize));
   }
 
   return {
     ok: true,
     ticker,
+    statementType: "cash_flow",
+    annualSaved: annual.length,
+    quarterlySaved: quarterlies.length,
     annualYears: Array.from(annualYears).sort((a, b) => b - a),
     quarterlyYears: Array.from(quarterlyYears).sort((a, b) => b - a),
   };
