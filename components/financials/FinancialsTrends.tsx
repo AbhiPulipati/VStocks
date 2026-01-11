@@ -24,11 +24,8 @@ type GridApiResponse = {
 
 type Props = {
   ticker: string;
-  // keep in sync with financials tab controls, but this chart can show BOTH
-  periodType: PeriodType;
-  fiscalYear: number | null; // required for quarterly endpoint
-  units: UnitScale;
 };
+
 
 type MetricUnit = "money" | "percent" | "ratio";
 type Mode = "value" | "growth";
@@ -404,9 +401,14 @@ function buildMetrics(): MetricDef[] {
   return [...income, ...balance, ...cashFlow];
 }
 
-export default function FinancialsTrends({ ticker, periodType, fiscalYear, units }: Props) {
+export default function FinancialsTrends({ ticker }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ✅ Chart owns its own units (independent of the top selector)
+  const [units, setUnits] = useState<UnitScale>("millions");
+
+  // ✅ Chart owns its own quarterly year (independent of the top selector)
+  const [qFiscalYear, setQFiscalYear] = useState<number | null>(null);
 
   // allow Annual/Quarterly/Both (default both)
   const [showAnnual, setShowAnnual] = useState(true);
@@ -517,23 +519,18 @@ export default function FinancialsTrends({ ticker, periodType, fiscalYear, units
     };
   }, [ticker, showAnnual]);
 
-    useEffect(() => {
-    // If parent provides a year, always respect it
-    if (fiscalYear != null) {
-      setQFiscalYear(fiscalYear);
-      return;
-    }
+      // ✅ Pick a default quarterly year based on what THIS chart loaded
+  useEffect(() => {
+    if (qFiscalYear != null) return;
 
-    // Otherwise, infer from annual data (latest year)
     if (annualRows.length) {
       const latest = Math.max(...annualRows.map((r) => r.fiscalYear));
       setQFiscalYear(latest);
       return;
     }
 
-    // Fallback
     setQFiscalYear(new Date().getFullYear());
-  }, [fiscalYear, annualRows]);
+  }, [annualRows, qFiscalYear]);
 
   // fetch quarterly (for selected year) when showQuarterly
   useEffect(() => {
@@ -611,9 +608,7 @@ export default function FinancialsTrends({ ticker, periodType, fiscalYear, units
     return () => {
       cancelled = true;
     };
-  }, [ticker, showQuarterly, fiscalYear]);
-
-    const [qFiscalYear, setQFiscalYear] = useState<number | null>(null);
+  }, [ticker, showQuarterly, qFiscalYear]);
 
   // IMPORTANT: our MetricDef.get expects a unified row with fields at row.payload.<statement>.*
   // so we wrap a row into a "view" row object where payload top-level includes the merged statement payloads
@@ -667,7 +662,7 @@ export default function FinancialsTrends({ ticker, periodType, fiscalYear, units
 
     if (showQuarterly && qWrapped.length) {
       parts.push({
-        namePrefix: `Quarterly ${fiscalYear ?? ""}`.trim(),
+        namePrefix: `Quarterly ${qFiscalYear ?? ""}`.trim(),
         rows: qWrapped,
         x: qWrapped.map((r) => (r.fiscalDateEnding ? formatMDY(r.fiscalDateEnding) : `Q${r.quarter}`)),
         source: qSource,
@@ -675,140 +670,147 @@ export default function FinancialsTrends({ ticker, periodType, fiscalYear, units
     }
 
     return parts;
-  }, [showAnnual, showQuarterly, annualWrapped, qWrapped, annualSource, qSource, fiscalYear]);
+  }, [showAnnual, showQuarterly, annualWrapped, qWrapped, annualSource, qSource, qFiscalYear]);
 
   const useDualAxis =
   selectedMetrics.some((m) => (mode === "growth" ? true : m.unit === "percent")) &&
   selectedMetrics.some((m) => (mode === "growth" ? false : m.unit !== "percent"));
 
-  const option = useMemo(() => {
-    const allSeries: any[] = [];
-    const xAxis: any[] = [];
-    const yAxes: any[] = [];
+const option = useMemo(() => {
+  const allSeries: any[] = [];
+  const xAxes: any[] = [];
+  const yAxes: any[] = [];
+  const grids: any[] = [];
 
-    const hasAny = selectedMetrics.length > 0 && chartModel.length > 0;
+  const panelCount = chartModel.length;
+  const hasAny = selectedMetrics.length > 0 && panelCount > 0;
 
-    const useDualAxis = selectedMetrics.some((m) => m.unit === "percent") && selectedMetrics.some((m) => m.unit !== "percent");
+  // Dual axis if mixing percent + non-percent (or if growth mode, everything is percent)
+  const dual =
+    selectedMetrics.some((m) => (mode === "growth" ? true : m.unit === "percent")) &&
+    selectedMetrics.some((m) => (mode === "growth" ? false : m.unit !== "percent"));
 
+  // Build grids + axes per panel
+  chartModel.forEach((part, panelIndex) => {
+    grids.push({
+      left: 48,
+      right: dual ? 56 : 24,
+      top: panelCount === 2 ? (panelIndex === 0 ? 28 : 220) : 28,
+      height: panelCount === 2 ? 150 : 200,
+    });
+
+    // x-axis for this panel
+    xAxes.push({
+      gridIndex: panelIndex,
+      type: "category",
+      data: part.x,
+      axisLabel: { hideOverlap: true },
+    });
+
+    // y-axis (left) for this panel
     yAxes.push({
+      gridIndex: panelIndex,
       type: "value",
       axisLabel: {
-        formatter: (val: number) => {
-          // left axis: money/ratio by default
-          return formatScaledNumber(val, divisor);
-        },
+        formatter: (val: number) => formatScaledNumber(val, divisor),
       },
     });
 
-    if (useDualAxis) {
+    // y-axis (right) for this panel, if needed
+    if (dual) {
       yAxes.push({
+        gridIndex: panelIndex,
         type: "value",
         position: "right",
         axisLabel: { formatter: (val: number) => formatPercent(val) },
       });
     }
 
-    // multiple panels if both annual+quarterly (keeps clean)
-    // panel count = chartModel.length
-    // we use grid + xAxisIndex + yAxisIndex
-    const grids: any[] = [];
-    const legends: any = { type: "scroll", bottom: 0 };
+    // series per metric per panel
+    selectedMetrics.forEach((m) => {
+      const rawVals = part.rows.map((r) => m.get(r));
 
-    chartModel.forEach((part, panelIndex) => {
-      grids.push({
-        left: 48,
-        right: useDualAxis ? 56 : 24,
-        top: panelIndex === 0 ? 28 : 220,
-        height: chartModel.length === 2 ? 150 : 200,
-      });
+      const vals =
+        mode === "value"
+          ? rawVals
+          : rawVals.map((v, i) => {
+              if (i === 0) return null;
+              const prev = rawVals[i - 1];
+              if (v == null || prev == null || prev === 0) return null;
+              return (v - prev) / Math.abs(prev);
+            });
 
-      xAxis.push({
-        gridIndex: panelIndex,
-        type: "category",
-        data: part.x,
-        axisLabel: { hideOverlap: true },
-      });
+      const unit = mode === "growth" ? "percent" : m.unit;
+      const axisPerPanel = dual ? 2 : 1;
 
-      // series per metric per panel
-      selectedMetrics.forEach((m) => {
-        const rawVals = part.rows.map((r) => m.get(r));
+      // yAxisIndex mapping:
+      // panel 0 => yAxes[0] (left), yAxes[1] (right if dual)
+      // panel 1 => yAxes[2] (left), yAxes[3] (right if dual), etc.
+      const yAxisIndex = panelIndex * axisPerPanel + (dual && unit === "percent" ? 1 : 0);
 
-        const vals =
-          mode === "value"
-            ? rawVals
-            : rawVals.map((v, i) => {
-                if (i === 0) return null;
-                const prev = rawVals[i - 1];
-                if (v == null || prev == null || prev === 0) return null;
-                return (v - prev) / Math.abs(prev);
-              });
-
-        const unit = mode === "growth" ? "percent" : m.unit;
-        const yAxisIndex = useDualAxis && unit === "percent" ? 1 : 0;
-
-        allSeries.push({
-          name: chartModel.length === 2 ? `${m.label} (${part.namePrefix})` : m.label,
-          type: "line",
-          smooth: true,
-          symbol: "circle",
-          symbolSize: 6,
-          showSymbol: false,
-          connectNulls: false,
-          xAxisIndex: panelIndex,
-          yAxisIndex,
-          data: vals,
-        });
+      allSeries.push({
+        name: panelCount === 2 ? `${m.label} (${part.namePrefix})` : m.label,
+        type: "line",
+        smooth: true,
+        symbol: "circle",
+        symbolSize: 6,
+        showSymbol: false,
+        connectNulls: false,
+        xAxisIndex: panelIndex,
+        yAxisIndex,
+        data: vals,
       });
     });
+  });
 
-    return {
-      grid: grids,
-      tooltip: {
-        trigger: "axis",
-        valueFormatter: (val: any) => {
-          if (val == null || typeof val !== "number") return "—";
-          // heuristic: if it looks like a percent (growth or margin)
-          if (Math.abs(val) <= 2 && (mode === "growth" || useDualAxis)) return formatPercent(val);
-          return formatScaledNumber(val, divisor);
-        },
+  return {
+    grid: grids,
+    tooltip: {
+      trigger: "axis",
+      valueFormatter: (val: any) => {
+        if (val == null || typeof val !== "number") return "—";
+        if (Math.abs(val) <= 2 && (mode === "growth" || dual)) return formatPercent(val);
+        return formatScaledNumber(val, divisor);
       },
-      legend: legends,
-      xAxis,
-      yAxis: yAxes,
-      series: allSeries,
-      // small titles for multi-panel
-      graphic:
-        chartModel.length === 2
-          ? [
-              {
-                type: "text",
-                left: 48,
-                top: 6,
-                style: { text: chartModel[0].namePrefix, fill: "#334155", fontSize: 12, fontWeight: 600 },
-              },
-              {
-                type: "text",
-                left: 48,
-                top: 198,
-                style: { text: chartModel[1].namePrefix, fill: "#334155", fontSize: 12, fontWeight: 600 },
-              },
-            ]
-          : [],
-      // nice empty state
-      ...(hasAny
-        ? {}
-        : {
-            graphic: [
-              {
-                type: "text",
-                left: "center",
-                top: "middle",
-                style: { text: "Add a metric to view trends", fill: "#64748b", fontSize: 12 },
-              },
-            ],
-          }),
-    };
-  }, [selectedMetrics, chartModel, mode, divisor, useDualAxis]);
+    },
+    legend: { type: "scroll", bottom: 0 },
+    xAxis: xAxes,
+    yAxis: yAxes,
+    series: allSeries,
+
+    // Panel labels when dual-panel
+    graphic:
+      panelCount === 2
+        ? [
+            {
+              type: "text",
+              left: 48,
+              top: 6,
+              style: { text: chartModel[0].namePrefix, fill: "#334155", fontSize: 12, fontWeight: 600 },
+            },
+            {
+              type: "text",
+              left: 48,
+              top: 198,
+              style: { text: chartModel[1].namePrefix, fill: "#334155", fontSize: 12, fontWeight: 600 },
+            },
+          ]
+        : [],
+
+    ...(hasAny
+      ? {}
+      : {
+          graphic: [
+            {
+              type: "text",
+              left: "center",
+              top: "middle",
+              style: { text: "Add a metric to view trends", fill: "#64748b", fontSize: 12 },
+            },
+          ],
+        }),
+  };
+}, [selectedMetrics, chartModel, mode, divisor]);
 
   const removeMetric = (id: string) => setSelected((prev) => prev.filter((x) => x !== id));
   const addMetric = (id: string) =>
@@ -856,6 +858,44 @@ export default function FinancialsTrends({ ticker, periodType, fiscalYear, units
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+                      {/* Units (chart-only) */}
+          <div className="flex items-center gap-2 rounded-lg border bg-white px-2 py-1 text-xs">
+            <span className="text-muted-foreground">Units</span>
+            <select
+              className="rounded-md border px-2 py-1 text-xs bg-white"
+              value={units}
+              onChange={(e) => setUnits(e.target.value as UnitScale)}
+            >
+              <option value="thousands">Thousands</option>
+              <option value="millions">Millions</option>
+              <option value="billions">Billions</option>
+            </select>
+          </div>
+
+          {/* Quarterly year (chart-only) */}
+          {showQuarterly && (
+            <div className="flex items-center gap-2 rounded-lg border bg-white px-2 py-1 text-xs">
+              <span className="text-muted-foreground">Qtr Year</span>
+              <select
+                className="rounded-md border px-2 py-1 text-xs bg-white"
+                value={qFiscalYear ?? ""}
+                onChange={(e) => setQFiscalYear(Number(e.target.value))}
+              >
+                {Array.from(
+                  new Set(
+                    annualRows.map((r) => r.fiscalYear).concat([new Date().getFullYear()])
+                  )
+                )
+                  .sort((a, b) => b - a)
+                  .slice(0, 7)
+                  .map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
           {/* Period toggles */}
           <div className="flex items-center gap-2 rounded-lg border bg-white px-2 py-1 text-xs">
             <label className="flex items-center gap-1 cursor-pointer">

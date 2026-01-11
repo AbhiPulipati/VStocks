@@ -55,3 +55,4 @@ model CompanyFinancial {
   @@id([ticker, statementType, fiscalYear, periodType, quarter])
   @@index([ticker, statementType, periodType, fiscalYear])
 }
+
