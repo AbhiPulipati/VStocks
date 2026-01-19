@@ -6,6 +6,7 @@ import { fetchQuote } from "@/lib/fmp/quote";
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon } from "@heroicons/react/24/solid";
 import CompanyNews from "@/components/company/CompanyNews";
 import CompanyEvents from "@/components/company/CompanyEvents";
+import { PeriodType, StatementType } from "@/lib/generated/prisma/client";
 
 export default async function CompanyPage({
   params,
@@ -28,6 +29,50 @@ export default async function CompanyPage({
   if (!company) company = await syncCompany(ticker);
   const quote = await fetchQuote(company.ticker);
 
+// ✅ Pull latest income statement from DB (no new external API calls)
+const latestIncome = await prisma.companyFinancial.findFirst({
+  where: {
+    ticker: company.ticker,
+    statementType: StatementType.income,
+    periodType: PeriodType.annual,
+    quarter: 0,
+  },
+  orderBy: { fiscalYear: "desc" },
+});
+
+const incomePayload = (latestIncome?.payload ?? {}) as any;
+
+// Robust parsing (some payloads store numbers as strings)
+const revenueRaw =
+  incomePayload.totalRevenue ??
+  incomePayload.revenue ??
+  incomePayload.total_revenue ??
+  incomePayload.totalRevenueTTM ??
+  null;
+
+const netIncomeRaw =
+  incomePayload.netIncome ??
+  incomePayload.netIncomeFromContinuingOperations ??
+  incomePayload.netIncomeApplicableToCommonShares ??
+  incomePayload.net_income ??
+  null;
+
+const revenue = revenueRaw != null ? Number(revenueRaw) : null;
+const netIncome = netIncomeRaw != null ? Number(netIncomeRaw) : null;
+
+const revenueSafe = Number.isFinite(revenue as number) ? (revenue as number) : null;
+const netIncomeSafe = Number.isFinite(netIncome as number) ? (netIncome as number) : null;
+
+const netProfitMargin =
+  revenueSafe && netIncomeSafe != null && revenueSafe !== 0
+    ? netIncomeSafe / revenueSafe
+    : null;
+
+
+const peDerived =
+  quote?.marketCap != null && netIncomeSafe != null && netIncomeSafe > 0
+    ? quote.marketCap / netIncomeSafe
+    : null;
 
   return (
     <div className="px-1">
@@ -121,12 +166,28 @@ export default async function CompanyPage({
         <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-6">
           <h2 className="text-2xl font-bold text-black">Key Metrics</h2>
 
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            <MetricTile value="—" label="Market Cap" />
-            <MetricTile value="—" label="Net Profit Margin" />
-            <MetricTile value="—" label="Revenue (TTM)" />
-            <MetricTile value="—" label="P/E Ratio" />
-          </div>
+          <div className="text-2xl font-bold text-black mt-6 grid grid-cols-2 gap-4">
+  <MetricTile
+    value={quote?.marketCap != null ? fmtCompactCurrency(quote.marketCap) : "—"}
+    label="Market Cap"
+  />
+  <MetricTile
+    value={netProfitMargin != null ? fmtPct(netProfitMargin) : "—"}
+    label="Net Profit Margin"
+  />
+  <MetricTile
+    value={revenueSafe != null ? fmtCompactCurrency(revenueSafe) : "—"}
+    label="Revenue"
+  />
+  <MetricTile
+  value={
+    (quote?.pe != null ? quote.pe : peDerived) != null
+      ? fmtNumber((quote?.pe ?? peDerived) as number)
+      : "—"
+  }
+  label="P/E Ratio"
+/>
+</div>
         </div>
 
         
@@ -184,6 +245,23 @@ function fmtSignedMoney(n: number) {
 function fmtSignedPct(n: number) {
   const sign = n >= 0 ? "+" : "";
   return `${sign}${n.toFixed(2)}%`;
+}
+
+function fmtNumber(n: number) {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function fmtPct(p: number) {
+  return `${(p * 100).toFixed(2)}%`;
+}
+
+function fmtCompactCurrency(n: number) {
+  return n.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  });
 }
 
 function QuoteHeader({

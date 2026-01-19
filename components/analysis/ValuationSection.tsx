@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ValuationBarChart from "@/components/analysis/ValuationBarChart";
+import DcfProjectionsChart from "@/components/analysis/DcfProjectionChart";
 
 type Assumptions = {
   horizonYears: number;
@@ -38,6 +39,12 @@ type ApiResponse =
           discountFactor: number;
           pvFcf: number;
         }>;
+        historical: Array<{
+        year: number;
+        revenue: number;
+        operatingIncome: number;
+        fcf: number;
+        }>;
       };
     };
 
@@ -66,6 +73,7 @@ export default function ValuationSection({ ticker }: { ticker: string }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<Assumptions | null>(null);
   const [posting, setPosting] = useState(false);
+  const [projectionsView, setProjectionsView] = useState<"grid" | "chart">("chart");
 
   async function load() {
     setLoading(true);
@@ -190,6 +198,7 @@ const scale = (v: number) => {
   marketCap={data?.market?.marketCap ?? null}
 />
 
+
       {/* Assumptions quick view */}
       <div className="rounded-2xl border border-border bg-card p-5">
         <div className="mb-3 text-sm text-foreground">Assumptions</div>
@@ -209,38 +218,82 @@ const scale = (v: number) => {
       </div>
 
       {/* Projection table */}
-      <details className="rounded-2xl border border-border bg-card p-5">
-        <summary className="cursor-pointer text-sm text-foreground">
-          View DCF projections
-        </summary>
+<details className="rounded-2xl border border-border bg-card p-5">
+  <summary className="cursor-pointer text-sm text-foreground">
+    View DCF projections
+  </summary>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-[800px] w-full text-sm">
-            <thead className="text-xs text-muted-foreground">
-              <tr className="border-b border-border">
-                <th className="py-2 text-left">Year</th>
-                <th className="py-2 text-right">Revenue</th>
-                <th className="py-2 text-right">Op Income</th>
-                <th className="py-2 text-right">NOPAT</th>
-                <th className="py-2 text-right">FCF</th>
-                <th className="py-2 text-right">PV(FCF)</th>
-              </tr>
-            </thead>
-            <tbody className="text-foreground">
-              {data.valuation.projections.map((r) => (
-                <tr key={r.year} className="border-b border-border/60">
-                  <td className="py-2">{r.year}</td>
-                  <td className="py-2 text-right">{fmtMoney(r.revenue, 0)}</td>
-                  <td className="py-2 text-right">{fmtMoney(r.operatingIncome, 0)}</td>
-                  <td className="py-2 text-right">{fmtMoney(r.nopat, 0)}</td>
-                  <td className="py-2 text-right">{fmtMoney(r.fcf, 0)}</td>
-                  <td className="py-2 text-right">{fmtMoney(r.pvFcf, 0)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+  <div className="mt-4 flex items-center justify-between gap-3">
+    <div className="text-xs text-muted-foreground">
+      Historical + forecasted financials used in the DCF
+    </div>
+
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => setProjectionsView("chart")}
+        className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+          projectionsView === "chart"
+            ? "border-foreground/20 bg-foreground/5 text-foreground"
+            : "border-border text-muted-foreground"
+        }`}
+      >
+        Chart
+      </button>
+      <button
+        onClick={() => setProjectionsView("grid")}
+        className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+          projectionsView === "grid"
+            ? "border-foreground/20 bg-foreground/5 text-foreground"
+            : "border-border text-muted-foreground"
+        }`}
+      >
+        Grid
+      </button>
+    </div>
+  </div>
+
+  {projectionsView === "chart" ? (
+    <div className="mt-4">
+      <DcfProjectionsChart
+        historical={data.valuation.historical}
+        forecast={data.valuation.projections.map((p) => ({
+          year: p.year,
+          revenue: p.revenue,
+          operatingIncome: p.operatingIncome,
+          fcf: p.fcf,
+        }))}
+        terminalGrowthPct={data.valuation.assumptions.terminalGrowthPct}
+      />
+    </div>
+  ) : (
+    <div className="mt-4 overflow-x-auto">
+      <table className="min-w-[800px] w-full text-sm">
+        <thead className="text-xs text-muted-foreground">
+          <tr className="border-b border-border">
+            <th className="py-2 text-left">Year</th>
+            <th className="py-2 text-right">Revenue</th>
+            <th className="py-2 text-right">Op Income</th>
+            <th className="py-2 text-right">NOPAT</th>
+            <th className="py-2 text-right">FCF</th>
+            <th className="py-2 text-right">PV(FCF)</th>
+          </tr>
+        </thead>
+        <tbody className="text-foreground">
+          {data.valuation.projections.map((r) => (
+            <tr key={r.year} className="border-b border-border/60">
+              <td className="py-2">{r.year}</td>
+              <td className="py-2 text-right">{fmtMoney(r.revenue, 0)}</td>
+              <td className="py-2 text-right">{fmtMoney(r.operatingIncome, 0)}</td>
+              <td className="py-2 text-right">{fmtMoney(r.nopat, 0)}</td>
+              <td className="py-2 text-right">{fmtMoney(r.fcf, 0)}</td>
+              <td className="py-2 text-right">{fmtMoney(r.pvFcf, 0)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</details>
 
       {/* Drawer */}
       {drawerOpen && editing && (

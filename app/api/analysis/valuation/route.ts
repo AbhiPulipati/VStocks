@@ -385,6 +385,43 @@ async function computeValuation(ticker: string, overrides?: Partial<DcfAssumptio
     throw new Error("Could not find a complete base year (needs revenue, op income, CFO, capex)");
   }
 
+  // Build a small historical series for charting (last 5 years, ascending)
+// Uses FCF = CFO - CapEx when available, else falls back to direct FCF.
+const historical: Array<{
+  year: number;
+  revenue: number;
+  operatingIncome: number;
+  fcf: number;
+}> = [];
+
+for (const y of yearsDesc) {
+  const inc = byYearIncome.get(y);
+  const items = byYearCfItems.get(y) ?? [];
+
+  const revenue = safeNum(inc?.totalRevenue);
+  const operatingIncome = safeNum(inc?.operatingIncome);
+
+  const cfo = extractCfoFromFinnhubItems(items);
+  const capex = extractCapexFromFinnhubItems(items);
+  const fcfDirect = extractFreeCashFlowFromFinnhubItems(items);
+  const fcf = cfo != null && capex != null ? cfo - capex : fcfDirect;
+
+  if (
+    revenue != null &&
+    operatingIncome != null &&
+    fcf != null &&
+    Number.isFinite(revenue) &&
+    Number.isFinite(operatingIncome) &&
+    Number.isFinite(fcf)
+  ) {
+    historical.push({ year: y, revenue, operatingIncome, fcf });
+  }
+
+  if (historical.length >= 5) break;
+}
+
+historical.sort((a, b) => a.year - b.year);
+
   const baseOperatingMarginPct =
     baseRevenue !== 0 ? (baseOpIncome / baseRevenue) * 100 : 0;
 
@@ -507,6 +544,7 @@ if (shares == null) {
       terminalValue: dcf.terminalValue,
       assumptions: dcf.assumptions,
       base: dcf.base,
+      historical,
       projections: dcf.projections,
     },
   };

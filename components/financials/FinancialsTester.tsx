@@ -327,17 +327,9 @@ const yearOptions =
     units={units}
   />
 )}
-{view === "grid" && (
-  <div className="mt-4">
-    <FinancialsTrends
-      ticker={ticker}
-      statementType={statementType}
-      periodType={periodType}
-      fiscalYear={periodType === "quarterly" ? year : null}
-      units={units}
-    />
-  </div>
-)}
+<div className="mt-4">
+  <FinancialsTrends ticker={ticker} />
+</div>
     </div>
   );
 }
