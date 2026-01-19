@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { StatementType, PeriodType } from "@/lib/generated/prisma/client";
+import { StatementType, PeriodType } from "@prisma/client";
 import { fetchQuote } from "@/lib/fmp/quote";
 import { fetchProfileLite } from "@/lib/fmp/profile";
 import { runDcf, type DcfAssumptions } from "@/lib/analysis/dcf";
