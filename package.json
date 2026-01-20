@@ -5,7 +5,7 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && cp .next/standalone/server.js ./server.js",
     "start": "next start",
     "lint": "eslint"
   },
