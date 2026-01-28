@@ -1,20 +1,7 @@
 import ValuationSection from "@/components/analysis/ValuationSection";
 import AnalystRatingsSection from "@/components/analysis/AnalystRatingsSection";
-
-function EpsTrendPlaceholder() {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5">
-      <div className="text-sm font-semibold text-foreground">EPS Trend</div>
-      <div className="mt-1 text-xs text-muted-foreground">
-        Placeholder — coming soon
-      </div>
-
-      <div className="mt-4 h-[260px] rounded-xl border border-dashed border-border flex items-center justify-center">
-        <div className="text-sm text-muted-foreground">EPS trend chart placeholder</div>
-      </div>
-    </div>
-  );
-}
+import EPSTrendSection from "@/components/analysis/EPSTrendChart";
+import RatiosSection from "@/components/analysis/RatiosSection";
 
 export default async function AnalysisPage({
   params,
@@ -26,14 +13,12 @@ export default async function AnalysisPage({
 
   return (
     <div className="p-4 space-y-4">
-      {/* Top row: two half-width blocks */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <AnalystRatingsSection ticker={T} />
-        <EpsTrendPlaceholder />
+        <EPSTrendSection ticker={T} />
       </div>
-
-      {/* Rest of analysis */}
       <ValuationSection ticker={T} />
+      <RatiosSection ticker={T} />
     </div>
   );
 }

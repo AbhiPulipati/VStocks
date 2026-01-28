@@ -6,7 +6,7 @@ import { fetchQuote } from "@/lib/fmp/quote";
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon } from "@heroicons/react/24/solid";
 import CompanyNews from "@/components/company/CompanyNews";
 import CompanyEvents from "@/components/company/CompanyEvents";
-import { PeriodType, StatementType } from "@/lib/generated/prisma/client";
+import { PeriodType, StatementType } from "@prisma/client";
 
 export default async function CompanyPage({
   params,

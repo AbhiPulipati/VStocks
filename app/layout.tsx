@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ClearStocks",
+  title: "VStocks",
   description: "Clear, beginner-friendly stock analysis",
 };
 

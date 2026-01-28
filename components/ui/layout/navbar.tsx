@@ -139,10 +139,19 @@ export default function NavBar() {
     <nav className="flex items-center justify-between bg-white shadow px-4 py-1 w-full sticky top-0 z-50">
       <Link
         href="/"
-        className="flex items-center gap-2 hover:opacity-80 transition"
+        className="flex items-center gap-2 hover:opacity-80 transition group"
       >
-        <img src="/logo.svg" alt="VStocks logo" className="w-8 h-8" />
-        <span className="font-bold text-xl text-black">VStocks</span>
+        <div className="relative flex items-center">
+          <img 
+            src="/VStocksLogo.png" 
+            alt="VStocks logo" 
+            className="w-45 h-12" 
+          />
+          {/* Grey & Lowered Beta Badge */}
+          <span className="ml-2 px-1.5 py-0.5 text-[12px] font-bold uppercase tracking-widest text-slate-500 bg-slate-100 border border-slate-200 rounded translate-y-1 self-center">
+            Beta
+          </span>
+        </div>
       </Link>
 
       <div className="relative w-full max-w-md mx-4">

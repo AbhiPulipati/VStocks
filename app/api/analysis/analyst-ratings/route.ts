@@ -44,12 +44,19 @@ type AnalystRatingsResponse =
       };
       // trend for sparkline (last 12 periods)
       trend: Array<{
-        period: string;
-        score: number;
-        total: number;
-        dominantBucket: Bucket;
-        dominantCount: number;
-      }>;
+      period: string;
+      score: number;
+      total: number;
+      dominantBucket: Bucket;
+      dominantCount: number;
+
+      // ⬇️ ADD THESE
+      strongBuy: number;
+      buy: number;
+      hold: number;
+      sell: number;
+      strongSell: number;
+    }>;
     };
 
 const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -206,12 +213,20 @@ export async function GET(req: NextRequest) {
       trend: sorted.slice(-12).map((r) => {
         const scc = computeScore(r);
         const domm = dominantBucket(r);
+
         return {
           period: r.period,
           score: Number.isFinite(scc.score) ? scc.score : 0,
           total: scc.total,
           dominantBucket: domm.bucket,
           dominantCount: domm.count,
+
+          // ⬇️ ADD THESE
+          strongBuy: toInt(r.strongBuy),
+          buy: toInt(r.buy),
+          hold: toInt(r.hold),
+          sell: toInt(r.sell),
+          strongSell: toInt(r.strongSell),
         };
       }),
     };
