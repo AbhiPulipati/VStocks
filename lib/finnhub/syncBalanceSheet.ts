@@ -1,6 +1,6 @@
 // lib/finnhub/syncBalanceSheet.ts
 import { prisma } from "@/lib/prisma";
-import { PeriodType, StatementType } from "@/lib/generated/prisma/client";
+import { PeriodType, StatementType } from "@prisma/client";
 import {
   fetchFinnhubFinancialsReported,
   pickBalanceSheetItemsInOrder,

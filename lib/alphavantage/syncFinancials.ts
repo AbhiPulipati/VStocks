@@ -8,7 +8,7 @@ import {
   type AvStatementFn,
   type AvReport,
 } from "@/lib/alphavantage/financials";
-import { StatementType, PeriodType } from "@/lib/generated/prisma/client";
+import { StatementType, PeriodType } from "@prisma/client";
 
 function mapStatementType(fn: AvStatementFn): StatementType {
   switch (fn) {
