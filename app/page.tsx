@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
+import TickerTape from "@/components/tradingview/TickerTape";
 
 const verbs = ["iew", "alue", "erify", "isualize"];
 
@@ -68,7 +69,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-white text-slate-900 font-sans selection:bg-blue-500/30 overflow-x-hidden">
-      
+      <TickerTape/>
       {/* PROFESSIONAL BETA NOTICE MODAL */}
       <AnimatePresence>
         {showNotice && (
