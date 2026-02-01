@@ -157,7 +157,7 @@ export default function Home() {
           viewport={{ once: false, amount: 1 }}
           transition={{ duration: 0.8, delay: 2 }} // Delay slightly so it follows the split
           className="text-xl text-green-100/80 max-w-3xl text-center leading-relaxed mb-10">
-          <span className="text-green-400 font-semibold">Stock data and analysis</span>, presented visually and designed to be easily understood 
+          <span className="text-green-400 font-semibold">Stock data and analysis</span>, presented visually and designed to be easily understood. Search a company to begin!
         </motion.p>
       </section>
 
