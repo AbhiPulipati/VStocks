@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,18 +7,32 @@ datasource db {
 }
 
 model Company {
-  ticker      String  @id
+  ticker      String             @id
   name        String
   description String?
   sector      String?
   industry    String?
-  exchange    String?
   website     String?
   logoUrl     String?
+  exchange    String?
   ceo         String?
   ipoDate     String?
+  financials  CompanyFinancial[]
+}
 
-  financials CompanyFinancial[]
+model CompanyFinancial {
+  ticker           String
+  statementType    StatementType
+  fiscalYear       Int
+  periodType       PeriodType
+  quarter          Int
+  fiscalDateEnding DateTime?
+  reportedCurrency String?
+  payload          Json
+  company          Company       @relation(fields: [ticker], references: [ticker], onDelete: Cascade)
+
+  @@id([ticker, statementType, fiscalYear, periodType, quarter])
+  @@index([ticker, statementType, periodType, fiscalYear])
 }
 
 enum StatementType {
@@ -37,21 +45,3 @@ enum PeriodType {
   annual
   quarterly
 }
-
-model CompanyFinancial {
-  ticker        String
-  statementType StatementType
-  fiscalYear    Int
-  periodType    PeriodType
-  quarter       Int // 0 = annual, 1-4 = quarterly
-
-  fiscalDateEnding DateTime?
-  reportedCurrency String?
-  payload          Json
-
-  company Company @relation(fields: [ticker], references: [ticker], onDelete: Cascade)
-
-  @@id([ticker, statementType, fiscalYear, periodType, quarter])
-  @@index([ticker, statementType, periodType, fiscalYear])
-}
-
