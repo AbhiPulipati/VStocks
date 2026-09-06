@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
 import "./globals.css";
 import NavBar from "@/components/ui/layout/navbar";
 
@@ -26,15 +25,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* Google AdSense */}
-        <Script
+      <head>
+        <script
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4706066207483302"
           crossOrigin="anonymous"
-          strategy="afterInteractive"
         />
-
+      </head>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <NavBar />
         {children}
       </body>
